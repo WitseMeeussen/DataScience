@@ -100,6 +100,28 @@ missing_values %>%
   coord_flip()+theme_bw()
 ```
 
+```{r}
+#combineren
+full  <- bind_rows(train, test) # bind training & test data
+
+full$Surname <- sapply(full$Name,  
+                       function(x) strsplit(x, split = '[,.]')[[1]][1])
+
+# Create a family size variable including the passenger themselves
+full$Fsize <- full$SibSp + full$Parch + 1
+
+# Create a family variable 
+full$Family <- paste(full$Surname, full$Fsize, sep='_')
+
+# Use ggplot2 to visualize the relationship between family size & survival
+ggplot(full[1:891,], aes(x = Fsize, fill = factor(Survived))) +
+  geom_bar(stat='count', position='dodge') +
+  scale_fill_brewer(palette="Set1") +
+  scale_x_continuous(breaks=c(1:11)) +
+  labs(x = 'Family Size') +
+  theme_minimal()
+  
+```
 Mutating van de data:
   * missing age vervangen door het gemiddelde van elke passagier
   * missing embarked vervangen door meest voorkomende code.
@@ -115,13 +137,13 @@ full <- full %>%
     
     Age = ifelse(is.na(Age), mean(full$Age, na.rm=TRUE), Age),
     
-    `Age Group` = case_when(Age < 13 ~ "Age.0012", 
+    `Age Group` = case_when(Age < 13 ~ "Age.00-12", 
                             
-                            Age >= 13 & Age < 18 ~ "Age.1317",
+                            Age >= 13 & Age < 18 ~ "Age.13-17",
                             
-                            Age >= 18 & Age < 60 ~ "Age.1859",
+                            Age >= 18 & Age < 60 ~ "Age.18-59",
                             
-                            Age >= 60 ~ "Age.60Ov"))
+                            Age >= 60 ~ "Age.60 Ov"))
 
 
 full$Embarked <- replace(full$Embarked, which(is.na(full$Embarked)), 'S')
