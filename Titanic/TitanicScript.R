@@ -1,7 +1,7 @@
 library('tidyverse')
 # read_csv reads it as tibble
-train <- read_csv('../train.csv')
-test <- read_csv('../test.csv')
+train <- read_csv('train.csv')
+test <- read_csv('test.csv')
 
 # binds the data because we dont need test data
 full  <- bind_rows(train, test)

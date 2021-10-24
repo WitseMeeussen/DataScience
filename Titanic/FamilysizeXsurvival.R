@@ -17,7 +17,7 @@ full$Fsize <- full$SibSp + full$Parch + 1
 full$Family <- paste(full$Surname, full$Fsize, sep='_')
 
 # Use ggplot2 to visualize the relationship between family size & survival
-ggplot(full[1:891,], aes(x = Fsize, fill = factor(Survived))) +
+ggplot(full, aes(x = Fsize, fill = factor(Survived))) +
   geom_bar(stat='count', position='dodge') +
   scale_x_continuous(breaks=c(1:11)) +
   labs(x = 'Family Size')
