@@ -17,7 +17,7 @@ recursive.ReadDepartment <- function(files){
 #returns a tibble containing every department info added together row wise
 recursive.ReadBinnenData <- function(dirs){
   files <- list.files(dirs[1], full.names = TRUE)
-  if(length(dirs)==1) return (recursive.ReadDepartment(files)[['group']])
+  if(length(dirs)==1) return (recursive.ReadDepartment(files))
   else return (bind_rows(recursive.ReadDepartment(files),recursive.ReadBinnenData(dirs[-1])))
 }
 
@@ -30,14 +30,16 @@ recursive.ReadDir <- function(files){
 
 #Reads the directories containing the measurements per department
 binnenDirs <- dir("../Data", pattern="Binnenmetingen(...)", full.names = TRUE)
-binnenData <- recursive.ReadBinnenData(binnenDirs)
+binnenData <- recursive.ReadBinnenData(binnenDirs)%>%
+  mutate(date= as.Date(date, format= "%d-%m-%Y"))
 
 # excludes a non defining column group
-buitenData <- recursive.ReadDir(list.files("../Data/Buitenmetingen", full.names = TRUE))[,-9]
+buitenData <- recursive.ReadDir(list.files("../Data/Buitenmetingen", full.names = TRUE))[,-9]%>%
+  mutate(date= as.Date(date, format= "%d-%m-%Y"))
 
 #gelijktrekken op tijd
-plantDataLED <- read_table("../Data/Portento Belichting LED 2020.txt",col_names=c('dateS', 'timeS','sapstroom','dateD','timeD','diameter'), col_types = NULL, skip = 1)
-plantDataSonT <- read_table("../Data/Portento Belichting SonT 2020.txt",col_names=c('dateS', 'timeS','sapstroom','dateD','timeD','diameter'), col_types = NULL, skip = 1)
+#plantDataLED <- read_table("../Data/Portento Belichting LED 2020.txt",col_names=c('dateS', 'timeS','sapstroom','dateD','timeD','diameter'), col_types = NULL, skip = 1)
+#plantDataSonT <- read_table("../Data/Portento Belichting SonT 2020.txt",col_names=c('dateS', 'timeS','sapstroom','dateD','timeD','diameter'), col_types = NULL, skip = 1)
 #plantDataLED[1:3]
 #plantDataLED[4:6]
 
