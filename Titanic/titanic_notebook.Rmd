@@ -5,8 +5,11 @@ output: html_notebook
 
 Het inlezen van elke library.
 
+
+
 ```{r}
 library(tidyverse)
+
 # data wrangling
 
 library(tidyverse)
@@ -15,7 +18,7 @@ library(stringr)
 library(caTools)
 
 # data assessment/visualizations
-
+library(kableExtra)
 library(DT)
 library(data.table)
 library(pander)
@@ -24,25 +27,9 @@ library(scales)
 library(grid)
 library(gridExtra)
 library(corrplot)
-library(VIM) 
 library(knitr)
-library(vcd)
-library(caret)
 
-# model
 
-library(xgboost)
-library(MLmetrics)
-library('randomForest') 
-library('rpart')
-library('rpart.plot')
-library('car')
-library('e1071')
-library(vcd)
-library(ROCR)
-library(pROC)
-library(VIM)
-library(glmnet) 
 
 ```
 
@@ -77,8 +64,14 @@ dim(full)
 
 
 # Unique values per column
+```
 
-lapply(full, function(x) length(unique(x)))
+
+```{r}
+purrr::map(full, function(x) length(unique(x)))
+
+```
+```{r}
 
 ```
 
@@ -86,7 +79,8 @@ Kijken of we missing data hebben
 
 ```{r}
 
-missing_values <- full %>% summarize_all(funs(sum(is.na(.))/n()))
+
+missing_values <- full %>% map_df(~sum(is.na(.)))
 
 
 missing_values <- gather(missing_values, key="feature", value="missing_pct")
@@ -95,33 +89,26 @@ missing_values %>%
   
   ggplot(aes(x=reorder(feature,-missing_pct),y=missing_pct)) +
   
-  geom_bar(stat="identity",fill="red")+
+  geom_bar(stat="identity",fill="red") +
+  geom_text(aes(label = missing_pct), hjust = 1, colour = "black") +
+  xlab ("variabele") +
+  ylab ("missing values") +
   
-  coord_flip()+theme_bw()
-```
-
-```{r}
-#combineren
-full  <- bind_rows(train, test) # bind training & test data
-
-full$Surname <- sapply(full$Name,  
-                       function(x) strsplit(x, split = '[,.]')[[1]][1])
-
-# Create a family size variable including the passenger themselves
-full$Fsize <- full$SibSp + full$Parch + 1
-
-# Create a family variable 
-full$Family <- paste(full$Surname, full$Fsize, sep='_')
-
-# Use ggplot2 to visualize the relationship between family size & survival
-ggplot(full[1:891,], aes(x = Fsize, fill = factor(Survived))) +
-  geom_bar(stat='count', position='dodge') +
-  scale_fill_brewer(palette="Set1") +
-  scale_x_continuous(breaks=c(1:11)) +
-  labs(x = 'Family Size') +
+  coord_flip()+theme_bw()+
+  
+  ggtitle("Missing value by Column") + 
+  
   theme_minimal()
-  
 ```
+```{r}
+library(VIM)
+
+full %>% map_dbl(~sum(is.na(.)))
+
+aggr(full, prop = FALSE, combined = TRUE, numbers = TRUE, sortVars = TRUE, sortCombs = TRUE)
+
+```
+
 Mutating van de data:
   * missing age vervangen door het gemiddelde van elke passagier
   * missing embarked vervangen door meest voorkomende code.
@@ -256,8 +243,11 @@ crude_summary <- full %>%
 
 crude_survrate <- crude_summary$freq[crude_summary$Survived=="Yes"]
 
+crude_summary %>%
+  kbl() %>%
+  kable_paper()
 
-kable(crude_summary, caption="2x2 Contingency Table on Survival.", format="markdown")
+
 ```
 visualisatie van de data:
 
@@ -265,8 +255,8 @@ Survival gebaseerd op klasse
 ```{r}
 ggplot(full %>% filter(set=="train"), aes(Pclass, fill=Survived)) +
   
-  geom_bar(position = "stack") +
-  
+  geom_bar(position = "dodge") +
+  geom_text(aes(label = ..count..), stat = "count", position = position_dodge(0.9),vjust=1, colour = "black") +
   scale_fill_brewer(palette="Set1") +
   
   scale_y_continuous(labels=percent) +
@@ -281,11 +271,19 @@ ggplot(full %>% filter(set=="train"), aes(Pclass, fill=Survived)) +
 ```
 Survival gebasseerd op titel
 ```{r}
+ggplot(full[1:891,], aes(x = log(Fare), fill = Survived)) +
+      geom_density(alpha = 0.4)  + 
+      ggtitle("Density Plot of Fare related to Survival") +
+      theme_minimal()
+```
+
+
+```{r}
 
 ggplot(full %>% filter(set=="train") %>% na.omit, aes(title, fill=Survived)) +
   
   geom_bar(position="stack") +
-  
+  geom_text(aes(label = ..count..), position = position_stack(vjust = 0.5), stat = "count",  colour = "black") +
   scale_fill_brewer(palette="Set1") +
   
   scale_y_continuous(labels=comma) +
@@ -305,7 +303,7 @@ SURVIVAL geordend op geslacht
 ggplot(full %>% filter(set=="train"), aes(Sex, fill=Survived)) +
   
   geom_bar(position = "stack") +
-  
+  geom_text(aes(label = ..count..), stat = "count", position = position_stack(vjust = 0.5), colour = "black") +
   scale_fill_brewer(palette="Set1") +
   
   scale_y_continuous(labels=percent) +
@@ -318,3 +316,29 @@ ggplot(full %>% filter(set=="train"), aes(Sex, fill=Survived)) +
   
   theme_minimal()
 ```
+```{r}
+#combineren
+full  <- bind_rows(train, test) # bind training & test data
+
+full$Surname <- sapply(full$Name,  
+                       function(x) strsplit(x, split = '[,.]')[[1]][1])
+
+# Create a family size variable including the passenger themselves
+full$Fsize <- full$SibSp + full$Parch + 1
+
+# Create a family variable 
+full$Family <- paste(full$Surname, full$Fsize, sep='_')
+
+# Use ggplot2 to visualize the relationship between family size & survival
+ggplot(full[1:891,], aes(x = Fsize, fill = factor(Survived))) +
+  geom_bar(stat='count', position='dodge') +
+  geom_text(aes(label = ..count..), stat = "count", position = position_dodge(0.9), vjust=-0.5, colour = "black") +
+
+  scale_fill_brewer(palette="Set1") +
+  scale_x_continuous(breaks=c(1:11)) +
+  labs(x = 'Family Size') +
+  theme_minimal()
+  
+```
+
+
