@@ -2,8 +2,9 @@ source('DataLoad.R')
 
 #first calculate the variance in temperature between departments
 
-install.packages("corrr")
+library(ggplot2)
 library(corrr)
+
 
 ou <- binnenData %>%
   dplyr::filter(kastemperatuurklimaat< 10 & kastemperatuurklimaat> 0)
@@ -21,4 +22,10 @@ tempvariation <-binnenData %>%
   full_join(windsnelheiddata,by = intersect(c('date','time'),c('date','time')))
 
 ggplot(data=tempvariation) +
-  geom_point(mapping = aes(x = sd, y=windsnelheid*wind,alpha=0.1,))
+  geom_point(mapping = aes(x = sd, y=windsnelheid*wind,alpha=0.1,))+
+  xlab ("temperatuur")+
+  ylab ("windsnelheid")
+
+ggplot(ou, aes(x=kasttemperatuurklimaat, y=windzijderaamstand)) + 
+  geom_boxplot(outlier.colour="red", outlier.shape=8,
+               outlier.size=4)
