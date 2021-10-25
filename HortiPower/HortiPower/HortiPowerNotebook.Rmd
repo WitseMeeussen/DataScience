@@ -1,0 +1,238 @@
+
+packetten laden
+```{r}
+library(tidyverse)
+library(tibble)
+library(ggplot2)
+library(corrr)
+library(reshape2)
+```
+
+data laden
+-BinnenData
+  functies gebruikt om binnen data te lezen
+    Deze functie leest alle bestanden in een bepaalde map en joint de bestanden in 1 tibble.
+    Files is een lijst met relatieve paden naar elke file
+    De functie verwijdert de group variabele van elke file en voegt op het einde een group varabele toe,
+    met de waarde genomen uit de naam van het relatieve pad
+```{r}
+# returns a tibble that contains information of all the files joined (used to read Departments)
+recursive.ReadDepartment <- function(files){
+  file <-  read_delim(files[1],col_names=TRUE, col_types = NULL)
+  if(length(files) ==1){
+    file[,4] <- gsub('^(.*)\\s|/(.*)$','',files[1])
+    return (file)
+  } 
+  else return (full_join(file[,-4],recursive.ReadDepartment(files[-1]),by = intersect(c('date','time'),c('date','time'))))
+  
+}
+```
+
+    Deze functie gaat door de afdeling mappen en voegt de rijen van de directories samen.
+    dirs is een lijst met relatieve paden naar de mappen
+```{r}
+recursive.ReadBinnenData <- function(dirs){
+  files <- list.files(dirs[1], full.names = TRUE)
+  if(length(dirs)==1) return (recursive.ReadDepartment(files))
+  else return (bind_rows(recursive.ReadDepartment(files),recursive.ReadBinnenData(dirs[-1])))
+}
+```
+
+    binnenData wordt gelezen door het mee geven van de relatieve paden naar de afdeling mappen
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+binnenDirs <- dir("../Data", pattern="Binnenmetingen(...)", full.names = TRUE)
+binnenData <- recursive.ReadBinnenData(binnenDirs)%>%
+  mutate(date= as.Date(date, format= "%d-%m-%Y"))
+```
+
+-BuitenData
+  Deze functie wordt gebuikt om de bestanden in de buiten map te lezen.
+  Files is een lijst met relatieve paden naar elke file.
+  De functie verwijdert de group variabele van elke file en voegt op het einde een group varabele toe,
+```{r}
+recursive.ReadDir <- function(files){
+  file <-  read_delim(files[1],col_names=TRUE, col_types = NULL)
+  if(length(files) ==1)return (file[,-4]) 
+  else return (full_join(file[,-4],recursive.ReadDepartment(files[-1]),by = intersect(c('date','time'),c('date','time'))))
+  
+}
+```
+  
+  de buitenData wordt gelezen door het meegeven van de relatieve paden aan de recursieve functie.
+  de group variabele op colom 9 wordt ge deselecteerd.
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+buitenData <- recursive.ReadDir(list.files("../Data/Buitenmetingen", full.names = TRUE))[,-9]%>%
+  mutate(date= as.Date(date, format= "%d-%m-%Y"))
+```
+
+-PlantData
+  functie gebruikt bij het omzetten van plant data:
+  Deze functie wordt gebruikt om komma getallen om te zetten naar doubles
+```{r}
+commaNumberTodbl<- function(number){
+  before <- as.double(sub(',','.',number))
+}
+```
+
+  Inlezen van de 2 plantdata files deze zijn voor de 2 verschillende belichtingen
+  er wordt een variabele velichting toegevoegd met het juiste verlichtings type
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+colTypes <- list(col_character(),col_time(),col_character(),col_character(),col_time(),col_character())
+colNames <- c('dateS', 'timeS','sapstroom','dateD','timeD','diameter')
+#gelijktrekken op tijd
+plantDataLED <- read_table("../Data/Portento Belichting LED 2020.txt",col_names= colNames, col_types = colTypes, skip = 1)%>%
+  mutate(Verlichting = "LED")
+plantDataSonT <- read_table("../Data/Portento Belichting SonT 2020.txt",col_names=colNames, col_types = colTypes, skip = 1)%>%
+  mutate(Verlichting = "SonT")
+```
+
+  de volgende functie zorgd dat
+  Om de plant data te kunnen gebruiken worden de diameter en de sapstroom op een zelfde datum en tijd gezet.
+```{r}
+reorderPlantData<-function(plantData){
+  sap <- plantData[1:3]%>%
+    mutate(date = as.Date(dateS, format= "%d/%m/%Y"))%>%
+    select(-dateS)%>%
+    mutate(sapstroom = map_dbl(sapstroom, commaNumberTodbl))%>%
+    rename(time = timeS)
+  diameter <- plantData[4:7]%>%
+    mutate(date = as.Date(dateD, format= "%d/%m/%Y"))%>%
+    select(-dateD)%>%
+    mutate(diameter = map_dbl(diameter, commaNumberTodbl))%>%
+    rename(time = timeD)
+  return(left_join(sap,diameter,by = intersect(c('date','time'),c('date','time'))))
+}
+
+```
+
+  hier worden de rijen van de 2 planttabellen aan elkaar toegevoegd.
+```{r}
+plantData <- bind_rows(reorderPlantData(plantDataLED),reorderPlantData(plantDataSonT))
+```
+  
+Visualisatie
+  windsnelheid:
+    Dit is een tibbel met de bruikbare buitendata voor de temperatuur deviatie
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+windsnelheiddata <- buitenData %>%
+  select(date,time,windsnelheid,windrichting,buitentemperatuur,stralingssom)%>%
+  dplyr::filter(windsnelheid> 0)%>%
+  mutate(windrichting = factor(windrichting, levels=c('1','2','4','8','16','128','32','64'), labels=c('N','NE','E','SE','S','SW','W', 'NW')))
+```
+
+  Temperatuur deviatie:
+    Een vraag vanuit hortiPower was om te kijken naar de schommeling in temperatuur tussen de departementen
+    om dit verschil te representeren gebruiken wij de standaard deviatie van de temperatuur over de departementen.
+    
+    De volgende tabel wordt gegroepeerd per datum en tijd, zo wordt er over de departementen heen gemiddeldes en standaard deviaties genomen.
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+tempvariation <-binnenData %>%
+  select(date,time,AVklimaat,doek,luwezijderaamstand,windzijderaamstand,kastemperatuurklimaat,assimilatiebelichting,AVklimaat,CO2,transport)%>%
+  dplyr::filter(kastemperatuurklimaat> 0)%>%
+  group_by(date,time)%>%
+  summarise(TemperatuurDeviatie = sd(kastemperatuurklimaat),
+            luwezijderaamstand = mean(luwezijderaamstand,na.rm = TRUE),
+            doek = mean(doek,na.rm = TRUE),
+            windzijderaamstand = mean(windzijderaamstand,na.rm = TRUE),
+            AVklimaat = mean(AVklimaat,na.rm = TRUE),
+            kastemperatuurklimaat = mean(kastemperatuurklimaat,na.rm = TRUE),
+            assimilatiebelichting = mean(assimilatiebelichting,na.rm = TRUE),
+            AVklimaat = mean(AVklimaat,na.rm = TRUE),
+            CO2 = mean(CO2,na.rm=TRUE),
+            transport = mean(transport,na.rm=TRUE))%>%
+  full_join(windsnelheiddata,by = intersect(c('date','time'),c('date','time')))%>%
+  dplyr::filter(!is.na(TemperatuurDeviatie))%>%
+  dplyr::filter(!is.na(windsnelheid))%>%
+  mutate(windInvloed = luwezijderaamstand*windsnelheid)
+
+```
+    
+    Deze grafiek is een scatter plot tussen de temperatuurdeviatie en een statistiek windInvloed
+    windInvloed is het product tussen de luwezijderaamstand en de windsnelheid. Dit is omdat vermoedelijk de interactie van deze 2 het best zou correleren met de deviatie in temperatuur (ook volgens uitleg van vertegenwoordiger)
+    
+    In de plot valt op dat er een trent lijkt te zijn dat windinvloed de deviatie in de temperatuur vergroot.
+    Maar de deviatie in temperatuur is echter meer beinvloed door andere factoren.
+    Dit is zichtbaar door de ouliers maar ook door de grootte sprijding in data punten bij een lafe windInvloed.
+```{r}
+ggplot(data=tempvariation,mapping = aes(x = TemperatuurDeviatie, y=windInvloed)) +
+  geom_point(alpha=0.1)
+```
+    Omdat het mogelijk is dat de invloed van de wind sterk af hangt van de windsnelheid is er ook een visualisatie van deze scatterplot gefaceteerd per windrichting.
+    
+    echter kan men zien dat onafhankelijk van de richting van de wind er op zich al een grootte spreiding is in de deviatie in temperatuur bij lage windInvloed. Echter bij Zuid-Ooste wind (SE) is er een lichte hind van een correlatie.
+```{r}
+ggplot(data=tempvariation,mapping = aes(x = TemperatuurDeviatie, y=windInvloed)) +
+  geom_point(alpha=0.1) +
+  facet_wrap( ~ windrichting, nrow=2)
+```
+temperatuur deviatie correlaties per windrichting:    
+    Om Na te kijken wat er juist correleert met temperatuur deviatie afhankelijk van de wind richting hebben we een paar functies gebruikt
+    
+    Deze functie filterd naar de bepaalde windrichting en geeft een getransponeerde correlatie tabel terug
+      
+```{r}
+getCorrelationsWindrichting <- function(richting){
+  return(tempvariation%>%
+    filter(windrichting == richting)%>%
+    group_by(TemperatuurDeviatie)%>%
+    select(-date,-time,-windrichting)%>%
+    cor()%>%
+    melt()%>%
+    filter(Var1 == 'TemperatuurDeviatie')%>%
+    mutate(windrichting= richting))
+}
+```
+    
+    
+    Deze recursieve functie maakt voor elke windrichting een getranspneerde correlatie tabel en voegt de rijen samen.
+```{r}
+recursive.getWindrichtingen <- function(richtingen){
+  if(length(richtingen)==1) return(getCorrelationsWindrichting(richtingen[1]))
+  else{
+    return(bind_rows(getCorrelationsWindrichting(richtingen[1]),recursive.getWindrichtingen(richtingen[-1])))
+  }
+}
+```
+    
+    correlaties per wind richting worden aangemaakt door de recursieve functie de windrichtingen mee te geven uit de tibble windsnelheiddata
+    
+```{r}
+correlatieWindRichting <- recursive.getWindrichtingen(levels(windsnelheiddata$windrichting))
+```
+    
+    Visueel zien de correlaties er als volgd uit
+    
+```{r}
+correlatieWindRichting%>%
+  ggplot(aes(x=Var1, y=Var2, fill=value)) +
+  labs(title = 'Corelation between variable and temperature deviation',y ='Variables',x ='temperatuurDeviatie', fill = 'correlation')+geom_tile() + facet_wrap( ~ windrichting, nrow=1) + theme(axis.text.x = element_blank())
+```
+    De correlaties tussen windInvloed en temperatuurDeviatie per Windrichting kunnen uit correlatiewindRichting gehaald worden.
+    
+    hier vallen op de lichte positieve correlatie met Zuid ooste wind en de negatieve correlatie met de ooste wind.
+    
+```{r}
+corPlotData%>%
+  dplyr::filter(Var2 == 'windInvloed')%>%
+  rename(correlation = value)%>%
+  head(8)
+```
+    Om ook naar de plantdata te kijken maken we gebruik van volgende correlatie matrix.
+    
+```{r}
+plantData%>%
+  group_by(date,time)%>%
+  summarise(sapstroom=mean(sapstroom,na.rm = TRUE),
+            diameter=mean(diameter,na.rm=TRUE))%>%
+  right_join(tempvariation,by = intersect(c('date','time'),c('date','time')))%>%
+  filter(!is.na(sapstroom))%>%
+  filter(!is.na(diameter))%>%
+  group_by(sapstroom)%>%
+  select(-date,-time,-windrichting)%>%
+  cor()%>%
+  melt()%>%
+  ggplot(aes(x=Var1, y=Var2, fill=value))+theme(axis.text.x = element_text(angle = 90, hjust = 1)) +geom_tile()
+```
+    
+    

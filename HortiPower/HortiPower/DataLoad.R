@@ -36,11 +36,31 @@ binnenData <- recursive.ReadBinnenData(binnenDirs)%>%
 # excludes a non defining column group
 buitenData <- recursive.ReadDir(list.files("../Data/Buitenmetingen", full.names = TRUE))[,-9]%>%
   mutate(date= as.Date(date, format= "%d-%m-%Y"))
-
+colTypes <- list(col_character(),col_time(),col_character(),col_character(),col_time(),col_character())
+colNames <- c('dateS', 'timeS','sapstroom','dateD','timeD','diameter')
 #gelijktrekken op tijd
-#plantDataLED <- read_table("../Data/Portento Belichting LED 2020.txt",col_names=c('dateS', 'timeS','sapstroom','dateD','timeD','diameter'), col_types = NULL, skip = 1)
-#plantDataSonT <- read_table("../Data/Portento Belichting SonT 2020.txt",col_names=c('dateS', 'timeS','sapstroom','dateD','timeD','diameter'), col_types = NULL, skip = 1)
-#plantDataLED[1:3]
-#plantDataLED[4:6]
+plantDataLED <- read_table("../Data/Portento Belichting LED 2020.txt",col_names= colNames, col_types = colTypes, skip = 1)%>%
+  mutate(Verlichting = "LED")
+plantDataSonT <- read_table("../Data/Portento Belichting SonT 2020.txt",col_names=colNames, col_types = colTypes, skip = 1)%>%
+  mutate(Verlichting = "SonT")
 
-#dataLed <- left_join(plantDataLED[1:3],plantDataLED[4:6],by = intersect(c('dateS'),c('dateD')))
+commaNumberTodbl<- function(number){
+  before <- as.double(sub(',','.',number))
+}
+
+reorderPlantData<-function(plantData){
+  sap <- plantData[1:3]%>%
+    mutate(date = as.Date(dateS, format= "%d/%m/%Y"))%>%
+    select(-dateS)%>%
+    mutate(sapstroom = map_dbl(sapstroom, commaNumberTodbl))%>%
+    rename(time = timeS)
+  diameter <- plantData[4:7]%>%
+    mutate(date = as.Date(dateD, format= "%d/%m/%Y"))%>%
+    select(-dateD)%>%
+    mutate(diameter = map_dbl(diameter, commaNumberTodbl))%>%
+    rename(time = timeD)
+  return(left_join(sap,diameter,by = intersect(c('date','time'),c('date','time'))))
+}
+
+plantData <- bind_rows(reorderPlantData(plantDataLED),reorderPlantData(plantDataSonT))
+
